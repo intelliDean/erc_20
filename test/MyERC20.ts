@@ -2,7 +2,7 @@ import {loadFixture,} from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import {expect} from "chai";
 import {ethers} from "hardhat";
 
-describe("MyERC Test", function () {
+describe("Normal ERC-20", function () {
     // We define a fixture to reuse the same setup in every test.
     // We use loadFixture to run this setup once, snapshot that state,
     // and reset Hardhat Network to that snapshot in every test.
@@ -70,8 +70,6 @@ describe("MyERC Test", function () {
             } = await loadFixture(deployMyERC20);
 
             const amount = 500000;
-            const transferTx = await myERC.connect(owner).transfer(otherAccount.address, amount);
-            await transferTx.wait();
 
             expect(await myERC.connect(owner).transfer(otherAccount.address, amount))
                 .to.emit(myERC, "Transfer")
