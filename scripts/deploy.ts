@@ -2,10 +2,15 @@ import {ethers} from "hardhat";
 
 async function main() {
 
-    const erc = await ethers.deployContract("Dean20");
-    await erc.waitForDeployment();
+    const dean20 = await ethers.deployContract("Dean20");
+    await dean20.waitForDeployment();
 
-    console.log(`Contract: Todo deployed to ${erc.target}`);
+    const myERC20 = await ethers.deployContract("MyERC20");
+    await myERC20.waitForDeployment();
+
+    console.log(`Contract: Dean20 deployed to ${dean20.target}`);
+
+    console.log(`Contract: MyERC20 deployed to ${myERC20.target}`);
 
 }
 
