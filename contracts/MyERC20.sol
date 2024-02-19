@@ -8,10 +8,11 @@ contract MyERC20 is IDean20 {
 
     string private constant s_tokenName = "Dean20";
     string private constant s_tokenSymbol = "DTK";
+    uint256 private constant MAX_SUPPLY = 30000000000000000000000000;
+
     uint256 private s_totalSupply;
     address private s_owner;
     uint8 private s_tokenDecimal;
-    uint256 private constant MAX_SUPPLY = 30000000000000000000000000;
 
     mapping(address account => uint256 balance) private balances;
     mapping(address account => mapping(address spender => uint256)) private allowances;
@@ -36,11 +37,11 @@ contract MyERC20 is IDean20 {
         if (msg.sender != s_owner) revert Dean20Errors.ONLY_OWNER_IS_ALLOWED();
     }
 
-    function name() external  pure  returns (string memory) {
+    function name() external pure returns (string memory) {
         return s_tokenName;
     }
 
-    function symbol() external pure  returns (string memory) {
+    function symbol() external pure returns (string memory) {
         return s_tokenSymbol;
     }
 
@@ -57,28 +58,24 @@ contract MyERC20 is IDean20 {
     }
 
     function transfer(address _to, uint256 _value) external returns (bool success) {
-        if (_to == address(0)  || msg.sender == address(0)) revert Dean20Errors.ZERO_ADDRESS_NOT_ALLOWED();
-                            //normal transfer       //percentage deduction
-       // uint256 deduction = doDecimals(_value) + ((doDecimals(_value) * 10) / 100);
-        //burn 10% of the amount sent as charges
-        balances[msg.sender] = balances[msg.sender] - doDecimals(_value);
-        s_totalSupply = s_totalSupply - doDecimals(_value);
+        if (_to == address(0) || msg.sender == address(0)) revert Dean20Errors.ZERO_ADDRESS_NOT_ALLOWED();
+        if (s_totalSupply < balances[msg.sender]) revert Dean20Errors.BALANCE_MORE_THAN_TOTAL_SUPPLY();
 
+        balances[msg.sender] = balances[msg.sender] - doDecimals(_value);
         balances[_to] = balances[_to] + doDecimals(_value);
+
         emit Transfer(msg.sender, _to, _value);
         return true;
     }
 
     function transferFrom(address _from, address _to, uint256 _value) external returns (bool success) {
-        if (_to == address(0)  || _from == address(0)) revert Dean20Errors.ZERO_ADDRESS_NOT_ALLOWED();
-        if(allowances[_from][_to] < doDecimals(_value)) revert Dean20Errors.INSUFFICIENT_ALLOWANCE_BALANCE();
-
-        //uint256 deduction = doDecimals(_value) + ((doDecimals(_value) * 10) / 100);
+        if (_to == address(0) || _from == address(0)) revert Dean20Errors.ZERO_ADDRESS_NOT_ALLOWED();
+        if (allowances[_from][_to] < doDecimals(_value)) revert Dean20Errors.INSUFFICIENT_ALLOWANCE_BALANCE();
+        if (balances[_from] < allowances[_from][_to]) revert Dean20Errors.INSUFFICIENT_BALANCE();
+        if (s_totalSupply < balances[_from]) revert Dean20Errors.BALANCE_MORE_THAN_TOTAL_SUPPLY();
 
         balances[_from] = balances[_from] - doDecimals(_value);
         allowances[_from][_to] = allowances[_from][_to] - doDecimals(_value);
-
-        s_totalSupply = s_totalSupply - doDecimals(_value);
 
         balances[_to] = balances[_to] + doDecimals(_value);
         emit Transfer(_from, _to, _value);
@@ -86,7 +83,7 @@ contract MyERC20 is IDean20 {
     }
 
     function approve(address _spender, uint256 _value) external returns (bool success) {
-        if (_spender == address(0)  || msg.sender == address(0)) revert Dean20Errors.ZERO_ADDRESS_NOT_ALLOWED();
+        if (_spender == address(0) || msg.sender == address(0)) revert Dean20Errors.ZERO_ADDRESS_NOT_ALLOWED();
         if (balances[msg.sender] < doDecimals(_value)) revert Dean20Errors.INSUFFICIENT_BALANCE();
         allowances[msg.sender][_spender] = doDecimals(_value);
         emit Approval(msg.sender, _spender, _value);
@@ -97,8 +94,8 @@ contract MyERC20 is IDean20 {
         return revDecimals(allowances[_owner][_spender]);
     }
 
-    function mint(address _account, uint256 _amount) public   {
-       onlyOwner();
+    function mint(address _account, uint256 _amount) public {
+        onlyOwner();
         uint256 tempSupply = s_totalSupply + doDecimals(_amount);
         if (tempSupply > MAX_SUPPLY) revert Dean20Errors.MAXIMUM_TOKEN_SUPPLY_REACHED();
 
@@ -106,12 +103,14 @@ contract MyERC20 is IDean20 {
         balances[_account] = balances[_account] + doDecimals(_amount);
     }
 
-    function burn(address _account, uint96 _amount) external {
+    function burn(uint96 _amount) external {
         if (msg.sender == address(0)) revert Dean20Errors.ZERO_ADDRESS_NOT_ALLOWED();
-           balances[_account] = balances[_account] - doDecimals(_amount);
-           s_totalSupply = s_totalSupply - doDecimals(_amount);
+        if (balances[msg.sender] <= 0) revert Dean20Errors.CANNOT_BURN_ZERO_TOKEN();
 
-           balances[address(0)] = balances[address(0)] + doDecimals(_amount);
+        balances[msg.sender] = balances[msg.sender] - doDecimals(_amount);
+        s_totalSupply = s_totalSupply - doDecimals(_amount);
+
+        balances[address(0)] = balances[address(0)] + doDecimals(_amount);
     }
 
     function doDecimals(uint _amount) private pure returns (uint256) {

@@ -1,127 +1,268 @@
-import {
-  time,
-  loadFixture,
-} from "@nomicfoundation/hardhat-toolbox/network-helpers";
-import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs";
-import { expect } from "chai";
-import { ethers } from "hardhat";
+import {loadFixture,} from "@nomicfoundation/hardhat-toolbox/network-helpers";
+import {expect} from "chai";
+import {ethers} from "hardhat";
 
-describe("Lock", function () {
-  // We define a fixture to reuse the same setup in every test.
-  // We use loadFixture to run this setup once, snapshot that state,
-  // and reset Hardhat Network to that snapshot in every test.
-  async function deployOneYearLockFixture() {
-    const ONE_YEAR_IN_SECS = 365 * 24 * 60 * 60;
-    const ONE_GWEI = 1_000_000_000;
+describe("MyERC Test", function () {
+    // We define a fixture to reuse the same setup in every test.
+    // We use loadFixture to run this setup once, snapshot that state,
+    // and reset Hardhat Network to that snapshot in every test.
+    async function deployMyERC20() {
+        // Contracts are deployed using the first signer/account by default
+        const [owner, otherAccount, otherAccount2] = await ethers.getSigners();
 
-    const lockedAmount = ONE_GWEI;
-    const unlockTime = (await time.latest()) + ONE_YEAR_IN_SECS;
+        const MyERC = await ethers.getContractFactory("MyERC20");
+        const myERC = await MyERC.deploy();
 
-    // Contracts are deployed using the first signer/account by default
-    const [owner, otherAccount] = await ethers.getSigners();
+        return {myERC, owner, otherAccount, otherAccount2};
+    }
 
-    const Lock = await ethers.getContractFactory("Lock");
-    const lock = await Lock.deploy(unlockTime, { value: lockedAmount });
+    describe("Deployment", function () {
+        it("Should make sure that the deployment was successful", async function () {
+            const {
+                owner,
+                myERC
+            } = await loadFixture(deployMyERC20);
 
-    return { lock, unlockTime, lockedAmount, owner, otherAccount };
-  }
+            expect(myERC.target).exist;
+        });
 
-  describe("Deployment", function () {
-    it("Should set the right unlockTime", async function () {
-      const { lock, unlockTime } = await loadFixture(deployOneYearLockFixture);
+        it("Should test all the optional functions", async function () {
+            const {
+                myERC,
+                owner,
+                otherAccount
+            } = await loadFixture(deployMyERC20);
 
-      expect(await lock.unlockTime()).to.equal(unlockTime);
+            expect(await myERC.name()).to.be.equal("Dean20");
+            expect(await myERC.symbol()).to.be.equal("DTK");
+            expect(await myERC.decimals()).to.be.equal(18);
+            expect(await myERC.totalSupply()).to.be.equal(1000000);
+            const initialOwnerBalance = await myERC.balanceOf(owner.address);
+            expect(initialOwnerBalance).to.be.equal(1000000);
+
+        });
     });
 
-    it("Should set the right owner", async function () {
-      const { lock, owner } = await loadFixture(deployOneYearLockFixture);
+    describe("Test Transfer", () => {
+        it("Should transfer token successfully", async function () {
+            const {
+                myERC,
+                owner,
+                otherAccount
+            } = await loadFixture(deployMyERC20);
 
-      expect(await lock.owner()).to.equal(owner.address);
+            const amount = 500000;
+            const transferTx = await myERC.connect(owner).transfer(otherAccount.address, amount);
+            await transferTx.wait();
+
+            const ownerBalance = await myERC.balanceOf(owner.address);
+            const otherAccountBalance = await myERC.balanceOf(otherAccount.address);
+
+            expect(ownerBalance).to.be.equal(500000);
+            expect(otherAccountBalance).to.be.equal(500000);
+            expect(await myERC.totalSupply()).to.be.equal(1000000);
+        });
+        it("Should emit Transfer event after a successful transfer", async function () {
+            const {
+                myERC,
+                owner,
+                otherAccount
+            } = await loadFixture(deployMyERC20);
+
+            const amount = 500000;
+            const transferTx = await myERC.connect(owner).transfer(otherAccount.address, amount);
+            await transferTx.wait();
+
+            expect(await myERC.connect(owner).transfer(otherAccount.address, amount))
+                .to.emit(myERC, "Transfer")
+                .withArgs(owner.address, otherAccount.address, amount);
+
+        });
+
+        it("Should not permit Address Zero to send transaction", async function () {
+            const {
+                myERC,
+                owner,
+                otherAccount
+            } = await loadFixture(deployMyERC20);
+
+            const zeroAddress = "0x0000000000000000000000000000000000000000";
+            const zeroSigner = await ethers.provider.getSigner(zeroAddress);
+
+            expect(myERC.connect(zeroSigner).transfer(otherAccount.address, 120000))
+                .to.be.revertedWithCustomError(myERC, "ZERO_ADDRESS_NOT_ALLOWED");
+        });
+
+        it("Should not permit Address Zero to receive funds", async function () {
+            const {
+                myERC,
+                owner,
+                otherAccount
+            } = await loadFixture(deployMyERC20);
+
+            const zeroAddress = "0x0000000000000000000000000000000000000000";
+            const zeroSigner = await ethers.provider.getSigner(zeroAddress);
+
+            expect(myERC.connect(owner).transfer(zeroAddress, 120000))
+                .to.be.revertedWithCustomError(myERC, "ZERO_ADDRESS_NOT_ALLOWED");
+        });
+        it("Total supply should be more or equal to msg.sender balance for transfer to go through ",
+            async function () {
+                const {
+                    myERC,
+                    owner,
+                    otherAccount
+                } = await loadFixture(deployMyERC20);
+
+                expect(myERC.connect(owner).transfer(otherAccount.address, 1200000))
+                    .to.be.revertedWithCustomError(myERC, "BALANCE_MORE_THAN_TOTAL_SUPPLY");
+            });
     });
-//
-//     it("Should receive and store the funds to lock", async function () {
-//       const { lock, lockedAmount } = await loadFixture(
-//         deployOneYearLockFixture
-//       );
-//
-//       expect(await ethers.provider.getBalance(lock.target)).to.equal(
-//         lockedAmount
-//       );
-//     });
-//
-//     it("Should fail if the unlockTime is not in the future", async function () {
-//       // We don't use the fixture here because we want a different deployment
-//       const latestTime = await time.latest();
-//       const Lock = await ethers.getContractFactory("Lock");
-//       await expect(Lock.deploy(latestTime, { value: 1 })).to.be.revertedWith(
-//         "Unlock time should be in the future"
-//       );
-//     });
-//   });
-//
-//   describe("Withdrawals", function () {
-//     describe("Validations", function () {
-//       it("Should revert with the right error if called too soon", async function () {
-//         const { lock } = await loadFixture(deployOneYearLockFixture);
-//
-//         await expect(lock.withdraw()).to.be.revertedWith(
-//           "You can't withdraw yet"
-//         );
-//       });
-//
-//       it("Should revert with the right error if called from another account", async function () {
-//         const { lock, unlockTime, otherAccount } = await loadFixture(
-//           deployOneYearLockFixture
-//         );
-//
-//         // We can increase the time in Hardhat Network
-//         await time.increaseTo(unlockTime);
-//
-//         // We use lock.connect() to send a transaction from another account
-//         await expect(lock.connect(otherAccount).withdraw()).to.be.revertedWith(
-//           "You aren't the owner"
-//         );
-//       });
-//
-//       it("Shouldn't fail if the unlockTime has arrived and the owner calls it", async function () {
-//         const { lock, unlockTime } = await loadFixture(
-//           deployOneYearLockFixture
-//         );
-//
-//         // Transactions are sent using the first signer by default
-//         await time.increaseTo(unlockTime);
-//
-//         await expect(lock.withdraw()).not.to.be.reverted;
-//       });
-//     });
-//
-//     describe("Events", function () {
-//       it("Should emit an event on withdrawals", async function () {
-//         const { lock, unlockTime, lockedAmount } = await loadFixture(
-//           deployOneYearLockFixture
-//         );
-//
-//         await time.increaseTo(unlockTime);
-//
-//         await expect(lock.withdraw())
-//           .to.emit(lock, "Withdrawal")
-//           .withArgs(lockedAmount, anyValue); // We accept any value as `when` arg
-//       });
-//     });
-//
-//     describe("Transfers", function () {
-//       it("Should transfer the funds to the owner", async function () {
-//         const { lock, unlockTime, lockedAmount, owner } = await loadFixture(
-//           deployOneYearLockFixture
-//         );
-//
-//         await time.increaseTo(unlockTime);
-//
-//         await expect(lock.withdraw()).to.changeEtherBalances(
-//           [owner, lock],
-//           [lockedAmount, -lockedAmount]
-//         );
-     // });
-  //  });
-  });
+    describe("Test TransferFrom", () => {
+        it("Should be able to approve a user to spend on your behalf", async function () {
+            const {
+                myERC,
+                owner,
+                otherAccount
+            } = await loadFixture(deployMyERC20);
+            expect(await myERC.balanceOf(owner.address)).to.be.equal(1000000);
+
+            const tx = await myERC.connect(owner).approve(otherAccount.address, 20000);
+            await tx.wait();
+
+            expect(await myERC.allowance(owner.address, otherAccount.address)).to.be.equal(20000);
+        });
+
+        it("Should be able to transferFrom successfully", async function () {
+            const {
+                myERC,
+                owner,
+                otherAccount
+            } = await loadFixture(deployMyERC20);
+            expect(await myERC.balanceOf(owner.address)).to.be.equal(1000000);
+
+            const approveTx = await myERC.connect(owner).approve(otherAccount.address, 20000);
+            await approveTx.wait();
+
+            const tx = await myERC.transferFrom(owner.address, otherAccount.address, 20000);
+            await tx.wait();
+
+            expect(await myERC.balanceOf(otherAccount.address)).to.be.equal(20000);
+            expect(await myERC.balanceOf(owner.address)).to.be.equal(980000);
+            expect(await myERC.totalSupply()).to.be.equal(1000000);
+        });
+
+        it("Should not permit Address Zero to send transferFrom transaction", async function () {
+            const {
+                myERC,
+                owner,
+                otherAccount
+            } = await loadFixture(deployMyERC20);
+
+            const amount = 120000;
+            const zeroAddress = "0x0000000000000000000000000000000000000000";
+
+            expect(myERC.transferFrom(zeroAddress, otherAccount.address, amount))
+                .to.be.revertedWithCustomError(myERC, "ZERO_ADDRESS_NOT_ALLOWED");
+        });
+
+        it("Should not permit Address Zero to receive funds from a transferFrom tx", async function () {
+            const {
+                myERC,
+                owner,
+                otherAccount
+            } = await loadFixture(deployMyERC20);
+
+            const amount = 120000;
+
+            const zeroAddress = "0x0000000000000000000000000000000000000000";
+
+            expect(myERC.transferFrom(owner.address, zeroAddress, amount))
+                .to.be.revertedWithCustomError(myERC, "ZERO_ADDRESS_NOT_ALLOWED");
+        });
+
+        it("should revert if allowance amount < amount to spend on the owner behalf",
+            async function () {
+                const {
+                    myERC,
+                    owner,
+                    otherAccount
+                } = await loadFixture(deployMyERC20);
+                const amount = 120000;
+
+                const approveTx = await myERC.connect(owner).approve(otherAccount.address, amount);
+                await approveTx.wait();
+
+                expect(myERC.transferFrom(owner.address, otherAccount.address, 150000))
+                    .to.be.revertedWithCustomError(myERC, "INSUFFICIENT_ALLOWANCE_BALANCE");
+            });
+        it("should revert if allowance amount > owner balance", async function () {
+            const {
+                myERC,
+                owner,
+                otherAccount
+            } = await loadFixture(deployMyERC20);
+
+            expect(await myERC.balanceOf(owner.address)).to.be.equal(1_000_000);
+            const amount = 1_200_000;
+
+            expect(myERC.transferFrom(owner.address, otherAccount.address, amount))
+                .to.be.revertedWithCustomError(myERC, "INSUFFICIENT_BALANCE");
+        });
+    });
+
+    describe("Test Mint", () => {
+        it("Should mint successfully", async function () {
+            const {
+                myERC,
+                owner,
+                otherAccount
+            } = await loadFixture(deployMyERC20);
+            const amount = 50_000;
+            const tx = await myERC.connect(owner).mint(otherAccount.address, amount);
+            await tx.wait();
+
+            expect(await myERC.balanceOf(otherAccount.address)).to.be.equal(amount);
+        });
+        it("Should revert if not owner", async function () {
+            const {
+                myERC,
+                owner,
+                otherAccount,
+                otherAccount2
+            } = await loadFixture(deployMyERC20);
+            const amount = 50_000;
+
+            expect( myERC.connect(otherAccount).mint(otherAccount2.address, amount))
+                .to.be.revertedWithCustomError(myERC,"ONLY_OWNER_IS_ALLOWED");
+        });
+    });
+
+     describe("Test Burn", () => {
+        it("Should burn successfully", async function () {
+            const {
+                myERC,
+                owner,
+                otherAccount
+            } = await loadFixture(deployMyERC20);
+            const amount = 300_000;
+            const tx = await myERC.connect(owner).burn(amount);
+            await tx.wait();
+
+            expect(await myERC.balanceOf(owner.address)).to.be.equal(700_000);
+        });
+
+        it("Should revert msg.sender balance == 0", async function () {
+            const {
+                myERC,
+                owner,
+                otherAccount,
+                otherAccount2
+            } = await loadFixture(deployMyERC20);
+            const amount = 12_000;
+
+            expect( myERC.connect(otherAccount).burn( amount))
+                .to.be.revertedWithCustomError(myERC,"CANNOT_BURN_ZERO_TOKEN");
+        });
+    });
 });
