@@ -132,6 +132,21 @@ describe("MyERC Test", function () {
 
             expect(await myERC.allowance(owner.address, otherAccount.address)).to.be.equal(20000);
         });
+        it("Should emit Approval event after approval", async function () {
+            const {
+                myERC,
+                owner,
+                otherAccount
+            } = await loadFixture(deployMyERC20);
+            const amount = 20000;
+
+            const tx = await myERC.connect(owner).approve(otherAccount.address, amount);
+            await tx.wait();
+
+             expect(await myERC.connect(owner).transfer(otherAccount.address, amount))
+                .to.emit(myERC, "Approval")
+                .withArgs(owner.address, otherAccount.address, amount);
+        });
 
         it("Should be able to transferFrom successfully", async function () {
             const {
